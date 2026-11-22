@@ -9,6 +9,12 @@ let currentMesh = null;
 let shadingMode = 'original'; // 'original' | 'clay' | 'normals'
 let wireframeActive = false;
 let autoRotateActive = false;
+let currentEnv = 'vice-city';
+let currentBoxHelper = null;
+let bboxActive = false;
+let currentModelName = '';
+let grid = null;
+let lightsGroup = null;
 
 const clayMaterial = new THREE.MeshStandardMaterial({
   color: 0xd6dae5,

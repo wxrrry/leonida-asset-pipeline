@@ -406,15 +406,26 @@ main { flex: 1; position: relative; overflow: hidden; display: flex; }
         <button class="tool-btn" id="btn-shade-clay" onclick="setShadingMode('clay')">Studio Clay</button>
         <button class="tool-btn" id="btn-shade-normals" onclick="setShadingMode('normals')">Нормали</button>
         <button class="tool-btn" id="btn-wireframe" onclick="toggleWireframe()">Сетка</button>
+        <button class="tool-btn" id="btn-bbox" onclick="toggleBBox()">Габариты</button>
         <button class="tool-btn" id="btn-autorotate" onclick="toggleAutoRotate()">Вращение</button>
-        <button class="tool-btn" onclick="resetCamera()">Сброс камеры</button>
+        <button class="tool-btn" id="btn-reset-cam" onclick="resetCamera()">Сброс камеры</button>
+        <button class="tool-btn" id="btn-snapshot" onclick="exportSnapshot()" style="background: rgba(255, 42, 133, 0.2); border-color: var(--accent-pink);">📸 Снимок HD</button>
+        
+        <div class="env-group" style="display: flex; gap: 4px; align-items: center; margin-left: 6px; padding-left: 6px; border-left: 1px solid rgba(255, 255, 255, 0.1);">
+          <span id="lbl-light" style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Свет:</span>
+          <button class="tool-btn active" id="btn-env-vice-city" title="Vice City Neon" onclick="setEnvironment('vice-city')">🌆</button>
+          <button class="tool-btn" id="btn-env-miami-sunset" title="Miami Sunset" onclick="setEnvironment('miami-sunset')">🌅</button>
+          <button class="tool-btn" id="btn-env-studio-neutral" title="Neutral Studio" onclick="setEnvironment('studio-neutral')">💡</button>
+          <button class="tool-btn" id="btn-env-cyberpunk-amber" title="Cyberpunk Amber" onclick="setEnvironment('cyberpunk-amber')">🌃</button>
+        </div>
       </div>
       <div id="stats-overlay">
-        <div>Модель: <b id="stat-name">—</b></div>
-        <div>Категория: <b id="stat-category">—</b></div>
-        <div>Полигонов (треугольников): <b id="stat-triangles">0</b></div>
-        <div>Вершин: <b id="stat-vertices">0</b></div>
-        <div>Размер файла: <b id="stat-size">—</b></div>
+        <div><span id="lbl-stat-model">Модель:</span> <b id="stat-name">—</b></div>
+        <div><span id="lbl-stat-category">Категория:</span> <b id="stat-category">—</b></div>
+        <div><span id="lbl-stat-triangles">Полигонов:</span> <b id="stat-triangles">0</b></div>
+        <div><span id="lbl-stat-vertices">Вершин:</span> <b id="stat-vertices">0</b></div>
+        <div><span id="lbl-stat-dimensions">Габариты (Ш×В×Г):</span> <b id="stat-dimensions">—</b></div>
+        <div><span id="lbl-stat-size">Размер файла:</span> <b id="stat-size">—</b></div>
       </div>
     </div>
   </section>
@@ -462,8 +473,12 @@ const I18N = {
     shadeClay: "Studio Clay",
     shadeNormals: "Нормали",
     wireframe: "Сетка",
+    bbox: "Габариты",
     autoRotate: "Вращение",
     resetCamera: "Сброс камеры",
+    snapshot: "📸 Снимок HD",
+    lightLabel: "Свет:",
+    dimensionsLabel: "Габариты (Ш×В×Г):",
     statModel: "Модель:",
     statCategory: "Категория:",
     statTriangles: "Полигонов (треугольников):",
@@ -495,8 +510,12 @@ const I18N = {
     shadeClay: "Studio Clay",
     shadeNormals: "Normals",
     wireframe: "Wireframe",
+    bbox: "Bounding Box",
     autoRotate: "Auto-Rotate",
     resetCamera: "Reset Camera",
+    snapshot: "📸 HD Snapshot",
+    lightLabel: "Light:",
+    dimensionsLabel: "Dimensions (W×H×D):",
     statModel: "Model:",
     statCategory: "Category:",
     statTriangles: "Polygons (triangles):",
@@ -538,7 +557,11 @@ function applyTranslations() {
   document.getElementById('btn-shade-clay').innerText = t.shadeClay;
   document.getElementById('btn-shade-normals').innerText = t.shadeNormals;
   document.getElementById('btn-wireframe').innerText = t.wireframe;
+  document.getElementById('btn-bbox').innerText = t.bbox;
   document.getElementById('btn-autorotate').innerText = t.autoRotate;
+  document.getElementById('btn-snapshot').innerText = t.snapshot;
+  document.getElementById('lbl-light').innerText = t.lightLabel;
+  document.getElementById('lbl-stat-dimensions').innerText = t.dimensionsLabel;
   document.getElementById('tex-search-input').placeholder = t.texSearchPlaceholder;
   document.getElementById('modal-title').innerText = t.modalTitle;
 
@@ -589,6 +612,127 @@ function switchTab(tab) {
   }
 }
 
+let currentEnv = 'vice-city';
+let currentBoxHelper = null;
+let bboxActive = false;
+let currentModelName = '';
+let grid = null;
+let lightsGroup = null;
+
+function setEnvironment(envKey) {
+  currentEnv = envKey;
+  ['vice-city', 'miami-sunset', 'studio-neutral', 'cyberpunk-amber'].forEach(k => {
+    const btn = document.getElementById('btn-env-' + k);
+    if (btn) btn.classList.toggle('active', k === envKey);
+  });
+
+  if (!scene) return;
+
+  if (lightsGroup) {
+    scene.remove(lightsGroup);
+    lightsGroup = null;
+  }
+  if (grid) {
+    scene.remove(grid);
+    grid = null;
+  }
+
+  lightsGroup = new THREE.Group();
+
+  if (envKey === 'vice-city') {
+    scene.background = new THREE.Color(0x06060c);
+    const hemi = new THREE.HemisphereLight(0xfff5f8, 0x1a1528, 1.4);
+    hemi.position.set(0, 30, 0);
+    lightsGroup.add(hemi);
+    const main = new THREE.DirectionalLight(0xffffff, 1.6);
+    main.position.set(6, 12, 8);
+    lightsGroup.add(main);
+    const cyanRim = new THREE.DirectionalLight(0x00f0ff, 1.0);
+    cyanRim.position.set(-8, -4, -6);
+    lightsGroup.add(cyanRim);
+    const pinkRim = new THREE.DirectionalLight(0xff2a85, 0.8);
+    pinkRim.position.set(8, 2, -6);
+    lightsGroup.add(pinkRim);
+    grid = new THREE.GridHelper(20, 40, 0xff2a85, 0x1f1a3a);
+  } else if (envKey === 'miami-sunset') {
+    scene.background = new THREE.Color(0x150918);
+    const hemi = new THREE.HemisphereLight(0xffd1ba, 0x3d1030, 1.3);
+    hemi.position.set(0, 30, 0);
+    lightsGroup.add(hemi);
+    const sun = new THREE.DirectionalLight(0xffb703, 2.2);
+    sun.position.set(10, 8, 4);
+    lightsGroup.add(sun);
+    const purpleFill = new THREE.DirectionalLight(0x9d4edd, 0.9);
+    purpleFill.position.set(-8, -2, -6);
+    lightsGroup.add(purpleFill);
+    grid = new THREE.GridHelper(20, 40, 0xffb703, 0x481b36);
+  } else if (envKey === 'studio-neutral') {
+    scene.background = new THREE.Color(0x1a1c23);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444857, 1.2);
+    hemi.position.set(0, 30, 0);
+    lightsGroup.add(hemi);
+    const key = new THREE.DirectionalLight(0xffffff, 1.8);
+    key.position.set(5, 10, 7);
+    lightsGroup.add(key);
+    const fill = new THREE.DirectionalLight(0xdde3f0, 1.0);
+    fill.position.set(-6, 5, 5);
+    lightsGroup.add(fill);
+    const back = new THREE.DirectionalLight(0xffffff, 0.7);
+    back.position.set(0, 8, -8);
+    lightsGroup.add(back);
+    grid = new THREE.GridHelper(20, 40, 0x7982a9, 0x2b303c);
+  } else if (envKey === 'cyberpunk-amber') {
+    scene.background = new THREE.Color(0x08090b);
+    const hemi = new THREE.HemisphereLight(0xffd166, 0x061a14, 1.2);
+    hemi.position.set(0, 30, 0);
+    lightsGroup.add(hemi);
+    const amber = new THREE.DirectionalLight(0xffaa00, 2.0);
+    amber.position.set(8, 10, 6);
+    lightsGroup.add(amber);
+    const emerald = new THREE.DirectionalLight(0x06d6a0, 1.3);
+    emerald.position.set(-8, -2, -6);
+    lightsGroup.add(emerald);
+    const blueRim = new THREE.DirectionalLight(0x118ab2, 0.7);
+    blueRim.position.set(-4, 6, 8);
+    lightsGroup.add(blueRim);
+    grid = new THREE.GridHelper(20, 40, 0x06d6a0, 0x12232a);
+  }
+
+  if (grid) {
+    grid.position.y = -0.01;
+    scene.add(grid);
+  }
+  scene.add(lightsGroup);
+}
+
+function toggleBBox() {
+  bboxActive = !bboxActive;
+  const btn = document.getElementById('btn-bbox');
+  if (btn) btn.classList.toggle('active', bboxActive);
+
+  if (currentBoxHelper) {
+    scene.remove(currentBoxHelper);
+    currentBoxHelper = null;
+  }
+  if (bboxActive && currentMesh) {
+    currentBoxHelper = new THREE.BoxHelper(currentMesh, 0x00f0ff);
+    scene.add(currentBoxHelper);
+  }
+}
+
+function exportSnapshot() {
+  if (!renderer || !scene || !camera) return;
+  renderer.render(scene, camera);
+  const dataUrl = renderer.domElement.toDataURL('image/png');
+  const a = document.createElement('a');
+  const safeName = (currentModelName || 'leonida-model').replace(/[^a-zA-Z0-9_\-]/g, '_');
+  a.download = safeName + '-snapshot.png';
+  a.href = dataUrl;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 function initThree() {
   const container = document.getElementById('canvas-container');
   const canvas = document.getElementById('three-canvas');
@@ -608,27 +752,8 @@ function initThree() {
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
 
-  // Studio Lighting (Vice City Studio Look)
-  const hemiLight = new THREE.HemisphereLight(0xfff5f8, 0x1a1528, 1.4);
-  hemiLight.position.set(0, 30, 0);
-  scene.add(hemiLight);
-
-  const mainLight = new THREE.DirectionalLight(0xffffff, 1.6);
-  mainLight.position.set(6, 12, 8);
-  scene.add(mainLight);
-
-  const cyanRim = new THREE.DirectionalLight(0x00f0ff, 0.9);
-  cyanRim.position.set(-8, -4, -6);
-  scene.add(cyanRim);
-
-  const pinkRim = new THREE.DirectionalLight(0xff2a85, 0.7);
-  pinkRim.position.set(8, 2, -6);
-  scene.add(pinkRim);
-
-  // Neon Grid Ground
-  const grid = new THREE.GridHelper(20, 40, 0xff2a85, 0x1f1a3a);
-  grid.position.y = -0.01;
-  scene.add(grid);
+  // Initialize lighting and grid according to preset
+  setEnvironment(currentEnv);
 
   window.addEventListener('resize', onWindowResize);
   animate();
@@ -724,11 +849,29 @@ function loadModel(url, name, category, size) {
 
     applyMeshShading();
 
+    currentModelName = name;
     document.getElementById('stat-name').innerText = name;
     document.getElementById('stat-category').innerText = category || '—';
     document.getElementById('stat-triangles').innerText = Math.round(tris).toLocaleString();
     document.getElementById('stat-vertices').innerText = Math.round(verts).toLocaleString();
     document.getElementById('stat-size').innerText = formatBytes(size);
+
+    const box = new THREE.Box3().setFromObject(currentMesh);
+    const center = box.getCenter(new THREE.Vector3());
+    const sizeVec = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z) || 1.0;
+
+    document.getElementById('stat-dimensions').innerText =
+      `${sizeVec.x.toFixed(2)}m × ${sizeVec.y.toFixed(2)}m × ${sizeVec.z.toFixed(2)}m`;
+
+    if (currentBoxHelper) {
+      scene.remove(currentBoxHelper);
+      currentBoxHelper = null;
+    }
+    if (bboxActive) {
+      currentBoxHelper = new THREE.BoxHelper(currentMesh, 0x00f0ff);
+      scene.add(currentBoxHelper);
+    }
 
     // Auto-fit camera to bounding box
     const box = new THREE.Box3().setFromObject(currentMesh);

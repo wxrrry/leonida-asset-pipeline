@@ -410,6 +410,8 @@ main { flex: 1; position: relative; overflow: hidden; display: flex; }
         <button class="tool-btn" id="btn-autorotate" onclick="toggleAutoRotate()">Вращение</button>
         <button class="tool-btn" id="btn-reset-cam" onclick="resetCamera()">Сброс камеры</button>
         <button class="tool-btn" id="btn-snapshot" onclick="exportSnapshot()" style="background: rgba(255, 42, 133, 0.2); border-color: var(--accent-pink);">📸 Снимок HD</button>
+        <button class="tool-btn" id="btn-open-file" onclick="document.getElementById('local-file-input').click()" style="background: rgba(0, 229, 255, 0.2); border-color: var(--accent-cyan);">📂 Открыть .GLB</button>
+        <input type="file" id="local-file-input" accept=".glb,.gltf" style="display: none;" onchange="onLocalFileChosen(event)">
         
         <div class="env-group" style="display: flex; gap: 4px; align-items: center; margin-left: 6px; padding-left: 6px; border-left: 1px solid rgba(255, 255, 255, 0.1);">
           <span id="lbl-light" style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Свет:</span>
@@ -560,6 +562,7 @@ function applyTranslations() {
   document.getElementById('btn-bbox').innerText = t.bbox;
   document.getElementById('btn-autorotate').innerText = t.autoRotate;
   document.getElementById('btn-snapshot').innerText = t.snapshot;
+  document.getElementById('btn-open-file').innerText = t.openFile;
   document.getElementById('lbl-light').innerText = t.lightLabel;
   document.getElementById('lbl-stat-dimensions').innerText = t.dimensionsLabel;
   document.getElementById('tex-search-input').placeholder = t.texSearchPlaceholder;

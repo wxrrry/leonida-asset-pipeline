@@ -441,3 +441,101 @@ window.onload = () => {
   initThree();
   loadModels();
 };
+
+
+function setupLoadedMesh(mesh, name, category, size) {
+  if (currentMesh) scene.remove(currentMesh);
+  currentMesh = mesh;
+  scene.add(currentMesh);
+
+  let verts = 0;
+  let tris = 0;
+
+  currentMesh.traverse((child) => {
+    if (child.isMesh) {
+      child.userData.origMaterial = child.material;
+      if (child.geometry) {
+        verts += child.geometry.attributes.position ? child.geometry.attributes.position.count : 0;
+        tris += child.geometry.index ? child.geometry.index.count / 3 : (child.geometry.attributes.position ? child.geometry.attributes.position.count / 3 : 0);
+      }
+    }
+  });
+
+  applyMeshShading();
+
+  currentModelName = name;
+  document.getElementById('stat-name').innerText = name;
+  document.getElementById('stat-category').innerText = category || '—';
+  document.getElementById('stat-triangles').innerText = Math.round(tris).toLocaleString();
+  document.getElementById('stat-vertices').innerText = Math.round(verts).toLocaleString();
+  document.getElementById('stat-size').innerText = formatBytes(size);
+
+  const box = new THREE.Box3().setFromObject(currentMesh);
+  const center = box.getCenter(new THREE.Vector3());
+  const sizeVec = box.getSize(new THREE.Vector3());
+
+  const dimStr = `${sizeVec.x.toFixed(2)}m × ${sizeVec.y.toFixed(2)}m × ${sizeVec.z.toFixed(2)}m`;
+  const dimElem = document.getElementById('stat-dimensions');
+  if (dimElem) dimElem.innerText = dimStr;
+
+  if (bboxActive) {
+    if (currentBoxHelper) scene.remove(currentBoxHelper);
+    currentBoxHelper = new THREE.BoxHelper(currentMesh, 0x00f0ff);
+    scene.add(currentBoxHelper);
+  }
+
+  currentMesh.position.sub(center);
+
+  const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
+  const fov = camera.fov * (Math.PI / 180);
+  let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+  cameraZ *= 2.2;
+
+  camera.position.set(cameraZ * 0.7, cameraZ * 0.5, cameraZ);
+  camera.lookAt(0, 0, 0);
+
+  controls.target.set(0, 0, 0);
+  controls.update();
+}
+
+function loadLocalFile(file) {
+  if (!file) return;
+  const bar = document.getElementById('loading-bar');
+  if (bar) bar.style.transform = 'scaleX(0.3)';
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    if (bar) bar.style.transform = 'scaleX(0.8)';
+    const loader = new THREE.GLTFLoader();
+    loader.parse(e.target.result, '', (gltf) => {
+      if (bar) {
+        bar.style.transform = 'scaleX(1)';
+        setTimeout(() => { bar.style.transform = 'scaleX(0)'; }, 250);
+      }
+      setupLoadedMesh(gltf.scene, file.name, 'Local / Drag&Drop', file.size);
+    }, (err) => {
+      console.error('Failed to parse local 3D file:', err);
+      if (bar) bar.style.transform = 'scaleX(0)';
+      alert('Error loading 3D file: ' + (err.message || err));
+    });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function onLocalFileChosen(event) {
+  const files = event.target.files;
+  if (files && files.length > 0) {
+    loadLocalFile(files[0]);
+  }
+}
+
+window.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+});
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    loadLocalFile(e.dataTransfer.files[0]);
+  }
+});

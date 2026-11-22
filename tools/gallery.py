@@ -1,7 +1,7 @@
-"""Standalone local 3D Web Studio & Texture Gallery server.
+"""Standalone local 3D Web Studio & Texture Gallery server for Leonida.
 
 Launches a lightweight local HTTP server and opens a modern WebGL/glTF
-3D asset inspector in the browser.
+3D asset inspector in the browser with Vice City / Leonida aesthetic.
 
 Usage:
     python -I tools/gallery.py [--port 8080] [--models-dir <path>] [--textures-dir <path>]
@@ -25,19 +25,21 @@ except ImportError:
     dds_png = None
 
 
-def categorize_model(name: str) -> str:
-    n = name.lower()
-    if any(k in n for k in ("ped", "female", "male", "head", "body", "lucia", "jacket", "hair", "face")):
-        return "Character"
-    elif any(k in n for k in ("veh", "car", "truck", "bike", "wheel", "heli", "boat", "chassis")):
-        return "Vehicle"
-    elif any(k in n for k in ("build", "structure", "house", "bridge", "farlod", "station", "shop", "wall")):
-        return "Architecture"
-    elif any(k in n for k in ("weapon", "gun", "pistol", "rifle", "knife", "ammo")):
-        return "Weapon"
-    elif any(k in n for k in ("tree", "grass", "plant", "bush", "flower")):
-        return "Nature"
-    return "Prop"
+def categorize_model(name: str, folder: str = "") -> str:
+    combined = f"{folder}/{name}".lower()
+    if any(k in combined for k in ("veh", "car", "truck", "bike", "wheel", "heli", "boat", "chassis", "door", "motor", "engine")):
+        return "Транспорт (Vehicles)"
+    elif any(k in combined for k in ("ped", "female", "male", "head", "body", "lucia", "jason", "jacket", "hair", "face", "cloth", "skin")):
+        return "Персонажи (Characters)"
+    elif any(k in combined for k in ("build", "structure", "house", "bridge", "farlod", "station", "shop", "wall", "interior", "level", "road", "terrain")):
+        return "Карта и Здания (World)"
+    elif any(k in combined for k in ("weapon", "gun", "pistol", "rifle", "knife", "ammo", "shotgun", "smg")):
+        return "Оружие (Weapons)"
+    elif any(k in combined for k in ("tree", "grass", "plant", "bush", "flower", "water", "palm")):
+        return "Растительность (Nature)"
+    elif any(k in combined for k in ("light", "lamp", "sign", "box", "chair", "table", "prop", "debris", "anm", "amb", "core")):
+        return "Объекты и Пропы (Props)"
+    return "Прочее (Miscellaneous)"
 
 
 class StudioHandler(http.server.BaseHTTPRequestHandler):
@@ -61,13 +63,23 @@ class StudioHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path.startswith("/vendor/"):
-            rel = path[len("/vendor/"):]
-            vpath = os.path.join(self.viewer_dir, "vendor", rel)
+            rel = path[len("/vendor/"):].lstrip("/")
+            vpath = os.path.normpath(os.path.join(self.viewer_dir, "vendor", rel))
             if os.path.isfile(vpath):
                 mime = mimetypes.guess_type(vpath)[0] or "application/javascript"
                 self._send_file(vpath, mime)
             else:
                 self.send_error(404, "Vendor file not found")
+            return
+
+        # Serve static assets from viewer directory (e.g. style.css, app.js)
+        rel_viewer = path.lstrip("/")
+        vfile = os.path.normpath(os.path.join(self.viewer_dir, rel_viewer))
+        if os.path.isfile(vfile) and vfile.startswith(self.viewer_dir):
+            mime = mimetypes.guess_type(vfile)[0] or "application/octet-stream"
+            if mime.startswith("text/"):
+                mime += "; charset=utf-8"
+            self._send_file(vfile, mime)
             return
 
         if path == "/api/models":
@@ -79,21 +91,23 @@ class StudioHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path.startswith("/models/"):
-            rel = path[len("/models/"):]
-            mpath = os.path.join(self.models_dir, rel)
-            if os.path.isfile(mpath):
+            rel = path[len("/models/"):].lstrip("/")
+            mpath = os.path.normpath(os.path.join(self.models_dir, rel))
+            # Security: ensure mpath is inside models_dir
+            if os.path.isfile(mpath) and mpath.startswith(self.models_dir):
                 self._send_file(mpath, "model/gltf-binary")
             else:
                 self.send_error(404, "Model not found")
             return
 
         if path.startswith("/textures/"):
-            rel = path[len("/textures/"):]
-            tpath = os.path.join(self.textures_dir, rel)
+            rel = path[len("/textures/"):].lstrip("/")
+            tpath = os.path.normpath(os.path.join(self.textures_dir, rel))
+
             if not os.path.isfile(tpath) and rel.lower().endswith(".png"):
                 # Try matching .dds file if png requested
                 stem = os.path.splitext(rel)[0]
-                dds_cand = os.path.join(self.textures_dir, stem + ".dds")
+                dds_cand = os.path.normpath(os.path.join(self.textures_dir, stem + ".dds"))
                 if os.path.isfile(dds_cand) and dds_png:
                     try:
                         png_bytes = dds_png.dds_file_to_png_bytes(dds_cand, max_size=1024)
@@ -106,7 +120,8 @@ class StudioHandler(http.server.BaseHTTPRequestHandler):
                         return
                     except Exception:
                         pass
-            if os.path.isfile(tpath):
+
+            if os.path.isfile(tpath) and tpath.startswith(self.textures_dir):
                 mime = mimetypes.guess_type(tpath)[0] or "application/octet-stream"
                 self._send_file(tpath, mime)
             else:
@@ -132,16 +147,43 @@ class StudioHandler(http.server.BaseHTTPRequestHandler):
     def _serve_models_json(self) -> None:
         items = []
         if os.path.isdir(self.models_dir):
-            for entry in os.scandir(self.models_dir):
-                if entry.is_file() and entry.name.lower().endswith((".glb", ".gltf")):
-                    items.append({
-                        "name": entry.name,
-                        "size": entry.stat().st_size,
-                        "category": categorize_model(entry.name),
-                        "url": f"/models/{urllib.parse.quote(entry.name)}",
-                    })
-        items.sort(key=lambda x: (x["category"], x["name"]))
-        payload = json.dumps({"count": len(items), "models": items}).encode("utf-8")
+            for root, dirs, files in os.walk(self.models_dir):
+                dirs.sort()
+                for fn in sorted(files):
+                    if fn.lower().endswith((".glb", ".gltf")):
+                        full_path = os.path.join(root, fn)
+                        rel_path = os.path.relpath(full_path, self.models_dir).replace("\\", "/")
+                        rel_dir = os.path.relpath(root, self.models_dir).replace("\\", "/")
+                        folder_name = "Корневая папка" if rel_dir == "." else rel_dir
+                        try:
+                            fsize = os.path.getsize(full_path)
+                        except OSError:
+                            fsize = 0
+                        items.append({
+                            "name": fn,
+                            "path": rel_path,
+                            "folder": folder_name,
+                            "category": categorize_model(fn, folder_name),
+                            "size": fsize,
+                            "url": f"/models/{urllib.parse.quote(rel_path)}",
+                        })
+
+        # Group by category and folders for the UI
+        categories = {}
+        folders = {}
+        for item in items:
+            cat = item["category"]
+            fld = item["folder"]
+            categories.setdefault(cat, []).append(item)
+            folders.setdefault(fld, []).append(item)
+
+        payload = json.dumps({
+            "count": len(items),
+            "models": items,
+            "categories": {k: len(v) for k, v in categories.items()},
+            "folders": {k: len(v) for k, v in folders.items()},
+        }, ensure_ascii=False).encode("utf-8")
+
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
@@ -151,20 +193,35 @@ class StudioHandler(http.server.BaseHTTPRequestHandler):
     def _serve_textures_json(self) -> None:
         items = []
         if os.path.isdir(self.textures_dir):
-            for entry in os.scandir(self.textures_dir):
-                if entry.is_file() and entry.name.lower().endswith((".dds", ".png")):
-                    lower = entry.name.lower()
-                    fmt = "DDS (DirectDraw Surface)" if lower.endswith(".dds") else "PNG Image"
-                    preview_name = os.path.splitext(entry.name)[0] + ".png" if lower.endswith(".dds") else entry.name
-                    items.append({
-                        "name": entry.name,
-                        "size": entry.stat().st_size,
-                        "format": fmt,
-                        "url": f"/textures/{urllib.parse.quote(entry.name)}",
-                        "preview": f"/textures/{urllib.parse.quote(preview_name)}",
-                    })
+            for root, dirs, files in os.walk(self.textures_dir):
+                dirs.sort()
+                for fn in sorted(files):
+                    lower = fn.lower()
+                    if lower.endswith((".dds", ".png", ".jpg", ".webp")):
+                        full_path = os.path.join(root, fn)
+                        rel_path = os.path.relpath(full_path, self.textures_dir).replace("\\", "/")
+                        try:
+                            fsize = os.path.getsize(full_path)
+                        except OSError:
+                            fsize = 0
+                        fmt = "DirectDraw Surface (DDS)" if lower.endswith(".dds") else "PNG Image"
+                        preview_rel = os.path.splitext(rel_path)[0] + ".png" if lower.endswith(".dds") else rel_path
+                        items.append({
+                            "name": fn,
+                            "path": rel_path,
+                            "size": fsize,
+                            "format": fmt,
+                            "url": f"/textures/{urllib.parse.quote(rel_path)}",
+                            "preview": f"/textures/{urllib.parse.quote(preview_rel)}",
+                        })
+
         items.sort(key=lambda x: x["name"])
-        payload = json.dumps({"count": len(items), "textures": items}).encode("utf-8")
+        payload = json.dumps({
+            "count": len(items),
+            "textures": items,
+            "textures_dir": self.textures_dir,
+        }, ensure_ascii=False).encode("utf-8")
+
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
@@ -182,19 +239,50 @@ def start_server(
     root = os.path.dirname(here)
     viewer_dir = os.path.join(root, "viewer")
 
-    # Auto-locate default directories
+    # Auto-locate candidate directories
     if not models_dir or not os.path.isdir(models_dir):
-        cand1 = os.path.join(root, "..", "batch_converted_glb")
-        cand2 = os.path.join(root, "models")
-        models_dir = cand1 if os.path.isdir(cand1) else cand2
+        candidates = [
+            os.path.join(root, "models"),
+            os.path.join(root, "..", "batch_converted_glb"),
+            os.path.join(root, "..", "extracted_models"),
+        ]
+        best_cand = None
+        max_count = 0
+        for cand in candidates:
+            if os.path.isdir(cand):
+                c = sum(1 for _, _, files in os.walk(cand) for f in files if f.lower().endswith(('.glb', '.gltf')))
+                if c > max_count:
+                    max_count = c
+                    best_cand = cand
+        if best_cand:
+            models_dir = best_cand
+        if not models_dir or not os.path.isdir(models_dir):
+            models_dir = os.path.join(root, "models")
+            os.makedirs(models_dir, exist_ok=True)
 
     if not textures_dir or not os.path.isdir(textures_dir):
-        cand1 = os.path.join(root, "..", "clean_vehicles", "ttdb_vehicles")
-        cand2 = os.path.join(root, "textures")
-        textures_dir = cand1 if os.path.isdir(cand1) else cand2
+        candidates = [
+            os.path.join(root, "textures"),
+            os.path.join(root, "..", "clean_vehicles", "ttdb_vehicles"),
+            os.path.join(root, "..", "viewable_pngs"),
+            os.path.join(root, "..", "real_vehicle_pngs"),
+        ]
+        best_cand = None
+        max_count = 0
+        for cand in candidates:
+            if os.path.isdir(cand):
+                c = sum(1 for f in os.listdir(cand) if f.lower().endswith(('.png', '.dds', '.jpg', '.webp')))
+                if c > max_count:
+                    max_count = c
+                    best_cand = cand
+        if best_cand:
+            textures_dir = best_cand
+        if not textures_dir or not os.path.isdir(textures_dir):
+            textures_dir = os.path.join(root, "textures")
+            os.makedirs(textures_dir, exist_ok=True)
 
-    StudioHandler.models_dir = os.path.abspath(models_dir) if models_dir else ""
-    StudioHandler.textures_dir = os.path.abspath(textures_dir) if textures_dir else ""
+    StudioHandler.models_dir = os.path.abspath(models_dir)
+    StudioHandler.textures_dir = os.path.abspath(textures_dir)
     StudioHandler.viewer_dir = viewer_dir
 
     addr = ("127.0.0.1", port)
@@ -208,10 +296,13 @@ def start_server(
         httpd = ThreadingServer(addr, StudioHandler)
 
     url = f"http://localhost:{addr[1]}"
-    print(f"=== Leonida 3D Asset Studio ===")
-    print(f"Server running at: {url}")
-    print(f"Models directory:   {StudioHandler.models_dir}")
-    print(f"Textures directory: {StudioHandler.textures_dir}")
+    print(f"======================================================")
+    print(f"       LEONIDA 3D ASSET STUDIO (VICE CITY EDITION)    ")
+    print(f"======================================================")
+    print(f"Web Studio URL:     {url}")
+    print(f"Models Directory:   {StudioHandler.models_dir}")
+    print(f"Textures Directory: {StudioHandler.textures_dir}")
+    print(f"Viewer Directory:   {StudioHandler.viewer_dir}")
     print(f"Press Ctrl+C to stop.")
 
     if open_browser:

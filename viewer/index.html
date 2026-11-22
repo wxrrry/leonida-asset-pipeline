@@ -824,6 +824,58 @@ function applyMeshShading() {
   });
 }
 
+function setupLoadedMesh(mesh, name, category, size) {
+  if (currentMesh) scene.remove(currentMesh);
+  currentMesh = mesh;
+  scene.add(currentMesh);
+
+  let verts = 0;
+  let tris = 0;
+
+  currentMesh.traverse((child) => {
+    if (child.isMesh) {
+      child.userData.origMaterial = child.material;
+      if (child.geometry) {
+        verts += child.geometry.attributes.position ? child.geometry.attributes.position.count : 0;
+        tris += child.geometry.index ? child.geometry.index.count / 3 : (child.geometry.attributes.position ? child.geometry.attributes.position.count / 3 : 0);
+      }
+    }
+  });
+
+  applyMeshShading();
+
+  currentModelName = name;
+  document.getElementById('stat-name').innerText = name;
+  document.getElementById('stat-category').innerText = category || '—';
+  document.getElementById('stat-triangles').innerText = Math.round(tris).toLocaleString();
+  document.getElementById('stat-vertices').innerText = Math.round(verts).toLocaleString();
+  document.getElementById('stat-size').innerText = formatBytes(size);
+
+  const box = new THREE.Box3().setFromObject(currentMesh);
+  const center = box.getCenter(new THREE.Vector3());
+  const sizeVec = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z) || 1.0;
+
+  const dimElem = document.getElementById('stat-dimensions');
+  if (dimElem) {
+    dimElem.innerText = `${sizeVec.x.toFixed(2)}m × ${sizeVec.y.toFixed(2)}m × ${sizeVec.z.toFixed(2)}m`;
+  }
+
+  if (currentBoxHelper) {
+    scene.remove(currentBoxHelper);
+    currentBoxHelper = null;
+  }
+  if (bboxActive) {
+    currentBoxHelper = new THREE.BoxHelper(currentMesh, 0x00f0ff);
+    scene.add(currentBoxHelper);
+  }
+
+  currentMesh.position.sub(center);
+  camera.position.set(maxDim * 1.5, maxDim * 1.2, maxDim * 1.8);
+  controls.target.set(0, 0, 0);
+  controls.update();
+}
+
 function loadModel(url, name, category, size) {
   const bar = document.getElementById('loading-bar');
   bar.style.transform = 'scaleX(0.4)';
@@ -832,66 +884,53 @@ function loadModel(url, name, category, size) {
   loader.load(url, (gltf) => {
     bar.style.transform = 'scaleX(1)';
     setTimeout(() => { bar.style.transform = 'scaleX(0)'; }, 250);
-
-    if (currentMesh) scene.remove(currentMesh);
-    currentMesh = gltf.scene;
-    scene.add(currentMesh);
-
-    let verts = 0;
-    let tris = 0;
-
-    currentMesh.traverse((child) => {
-      if (child.isMesh) {
-        child.userData.origMaterial = child.material;
-        if (child.geometry) {
-          verts += child.geometry.attributes.position ? child.geometry.attributes.position.count : 0;
-          tris += child.geometry.index ? child.geometry.index.count / 3 : (child.geometry.attributes.position ? child.geometry.attributes.position.count / 3 : 0);
-        }
-      }
-    });
-
-    applyMeshShading();
-
-    currentModelName = name;
-    document.getElementById('stat-name').innerText = name;
-    document.getElementById('stat-category').innerText = category || '—';
-    document.getElementById('stat-triangles').innerText = Math.round(tris).toLocaleString();
-    document.getElementById('stat-vertices').innerText = Math.round(verts).toLocaleString();
-    document.getElementById('stat-size').innerText = formatBytes(size);
-
-    const box = new THREE.Box3().setFromObject(currentMesh);
-    const center = box.getCenter(new THREE.Vector3());
-    const sizeVec = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z) || 1.0;
-
-    document.getElementById('stat-dimensions').innerText =
-      `${sizeVec.x.toFixed(2)}m × ${sizeVec.y.toFixed(2)}m × ${sizeVec.z.toFixed(2)}m`;
-
-    if (currentBoxHelper) {
-      scene.remove(currentBoxHelper);
-      currentBoxHelper = null;
-    }
-    if (bboxActive) {
-      currentBoxHelper = new THREE.BoxHelper(currentMesh, 0x00f0ff);
-      scene.add(currentBoxHelper);
-    }
-
-    // Auto-fit camera to bounding box
-    const box = new THREE.Box3().setFromObject(currentMesh);
-    const center = box.getCenter(new THREE.Vector3());
-    const sizeVec = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z) || 1.0;
-
-    currentMesh.position.sub(center);
-    camera.position.set(maxDim * 1.5, maxDim * 1.2, maxDim * 1.8);
-    controls.target.set(0, 0, 0);
-    controls.update();
+    setupLoadedMesh(gltf.scene, name, category, size);
   }, undefined, (err) => {
     bar.style.transform = 'scaleX(0)';
     console.error('Error loading model:', err);
     alert('Не удалось загрузить 3D модель: ' + name);
   });
 }
+
+function loadLocalFile(file) {
+  if (!file) return;
+  const bar = document.getElementById('loading-bar');
+  bar.style.transform = 'scaleX(0.4)';
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    bar.style.transform = 'scaleX(0.8)';
+    const loader = new THREE.GLTFLoader();
+    loader.parse(e.target.result, '', (gltf) => {
+      bar.style.transform = 'scaleX(1)';
+      setTimeout(() => { bar.style.transform = 'scaleX(0)'; }, 250);
+      setupLoadedMesh(gltf.scene, file.name, 'Local / Drag&Drop', file.size);
+    }, (err) => {
+      console.error('Failed to parse local 3D file:', err);
+      bar.style.transform = 'scaleX(0)';
+      alert('Ошибка при чтении 3D файла: ' + (err.message || err));
+    });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function onLocalFileChosen(event) {
+  const files = event.target.files;
+  if (files && files.length > 0) {
+    loadLocalFile(files[0]);
+  }
+}
+
+window.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+});
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    loadLocalFile(e.dataTransfer.files[0]);
+  }
+});
 
 async function loadModels() {
   try {

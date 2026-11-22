@@ -207,7 +207,13 @@ function loadModel(url, name, category, size) {
 
 async function loadModels() {
   try {
-    const res = await fetch('/api/models');
+    let res;
+    try {
+      res = await fetch('/api/models');
+      if (!res.ok) throw new Error('API returned ' + res.status);
+    } catch (_) {
+      res = await fetch('models.json');
+    }
     const data = await res.json();
     allModels = data.models || [];
     document.getElementById('badge-models').innerText = allModels.length;
@@ -221,6 +227,16 @@ async function loadModels() {
     }
   } catch (e) {
     console.error('Failed to load models:', e);
+    const container = document.getElementById('model-list');
+    if (container) {
+      container.innerHTML = `
+        <div style="padding: 20px 14px; text-align: center; color: var(--text-muted); font-size: 12px; line-height: 1.6;">
+          <div style="font-size: 28px; margin-bottom: 8px;">📂</div>
+          <b style="color: var(--accent-pink);">Сервер галереи не запущен</b><br>
+          Запустите <code style="color: var(--accent-cyan); background: rgba(0,240,255,0.1); padding: 2px 5px; border-radius: 4px;">Start_Gallery.bat</code> в папке репозитория, либо нажмите кнопку <b style="color: #fff;">📂 Открыть .GLB</b> или перетащите любую 3D модель прямо в это окно!
+        </div>
+      `;
+    }
   }
 }
 
@@ -347,7 +363,13 @@ function renderAccordionList() {
 // Textures View Logic
 async function loadTextures() {
   try {
-    const res = await fetch('/api/textures');
+    let res;
+    try {
+      res = await fetch('/api/textures');
+      if (!res.ok) throw new Error('API returned ' + res.status);
+    } catch (_) {
+      res = await fetch('textures.json');
+    }
     const data = await res.json();
     allTextures = data.textures || [];
     document.getElementById('badge-textures').innerText = allTextures.length;
@@ -355,7 +377,7 @@ async function loadTextures() {
     renderTexturesGrid();
   } catch (e) {
     console.error('Failed to load textures:', e);
-    document.getElementById('tex-count').innerText = 'Ошибка загрузки текстур';
+    document.getElementById('tex-count').innerText = 'Ошибка загрузки текстур. Запустите Start_Gallery.bat';
   }
 }
 

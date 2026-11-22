@@ -87,11 +87,11 @@ header {
 }
 
 main { flex: 1; position: relative; overflow: hidden; display: flex; }
-.view-panel { width: 100%; height: 100%; display: none; }
-.view-panel.active { display: flex; }
+.view-panel { width: 100%; height: 100%; display: none !important; }
+.view-panel.active { display: flex !important; }
 
 /* Models Layout */
-#models-view { width: 100%; height: 100%; display: flex; }
+#models-view { width: 100%; height: 100%; }
 #sidebar {
   width: 340px;
   background: var(--bg-panel);
@@ -1167,6 +1167,7 @@ function closeModal() {
 window.onload = () => {
   initThree();
   loadModels();
+  loadTextures();
   setLanguage(currentLang);
 };
 

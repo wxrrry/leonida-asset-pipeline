@@ -15,6 +15,12 @@
 </p>
 
 <p align="center">
+  <a href="https://wxrrry.github.io/leonida-asset-pipeline/">
+    <img src="https://img.shields.io/badge/🎮_Live_Web_Studio-Open_3D_Viewer-ff2a85?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live Studio" />
+  </a>
+</p>
+
+<p align="center">
   <a href="#-english-version"><b>🇬🇧 English</b></a> &nbsp;•&nbsp; <a href="#-русская-версия"><b>🇷🇺 Русский</b></a>
 </p>
 
